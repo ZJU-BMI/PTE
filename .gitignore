@@ -1,0 +1,45 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyBuilder
+target/
+
+# pyenv
+.python-version
+
+# pycharm
+.idea/
+
+# eclipse file
+.settings/
+.classpath
+.project
+
+# data file
+resources/
+resource/
+
+# docs generate
+docs/build/
+
+# model save path
+model_save/
+exported_model/
+
+# jupyter file
+*.ipynb
+.ipynb_checkpoints/
+
+# result file
+result/
+
+# zip file
+*.zip
+
+# virtual enviroment
+venv/
+
+# some experimental configs
+experimental_configs/
