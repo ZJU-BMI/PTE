@@ -1,3 +1,5 @@
+import os
+
 import tensorflow as tf
 
 
@@ -39,9 +41,10 @@ class Discriminator(object):
     def __init__(self, name):
         self._name = name
 
-    def __call__(self, inputs, reuse=False):
+    def __call__(self, inputs, labels, reuse=False):
         with tf.variable_scope(self._name, reuse=reuse):
-            logits = tf.contrib.layers.fully_connected(inputs, 1, activation_fn=None)
+            sample = tf.concat((inputs, labels), -1)
+            logits = tf.contrib.layers.fully_connected(sample, 1, activation_fn=None)
 
         return logits
 
@@ -54,11 +57,17 @@ class Model(object):
         self._name = name
         self._predictor = Predictor('predictor')
         self._discriminator = Discriminator('discriminator')
+        self.build()
 
     def build(self):
         with tf.variable_scope(self._name):
             self._placeholder()
             self._pred_forward()
+            self._dis_forward()
+            self._pred_def()
+            self._loss_def()
+            self._train_def()
+        self._init_session()
 
     def _placeholder(self):
         self._input = tf.placeholder(tf.float32, [None, self._config.input_num], name='input_x')
@@ -83,27 +92,31 @@ class Model(object):
 
     def _dis_forward(self):
         # todo: change the input to discriminator
-        self._dis = self._discriminator(self._input)
-        self._fake_dis = self._discriminator(self._fake_input, reuse=True)
+        self._dis = self._discriminator(self._input, self._true_label)
+        self._fake_dis = self._discriminator(self._fake_input, self._fake_logits, reuse=True)
 
     def _pred_def(self):
-        # todo: def personal treatment effect
-        self._pte = tf.nn.sigmoid(self._logits) - tf.nn.sigmoid(self._fake_logits)
+        # def personal treatment effect
+        with tf.name_scope('pte'):
+            self._pte = tf.nn.sigmoid(self._logits) - tf.nn.sigmoid(self._fake_logits)
 
     def _loss_def(self):
         # use train data to train predictor
-        self._predict_loss = tf.losses.sigmoid_cross_entropy(self._true_label, self._logits)
-        if self._config.l2_of_p:
-            prl = self._config.l2_of_p * tf.losses.get_regularization_loss(self._name + '/predictor')
-            self._predict_loss = self._predict_loss + prl
+        with tf.name_scope('predict_loss'):
+            self._predict_loss = tf.losses.sigmoid_cross_entropy(self._true_label, self._logits)
+            if self._config.l2_of_p:
+                prl = self._config.l2_of_p * tf.losses.get_regularization_loss(self._name + '/predictor')
+                self._predict_loss = self._predict_loss + prl
 
         # adversarial loss
-        self._g_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(self._fake_dis), self._fake_dis)
-        self._d_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(self._dis), self._dis) + \
-            tf.losses.sigmoid_cross_entropy(tf.zeros_like(self._fake_dis), self._fake_dis)
-        if self._config.l2_of_d:
-            drl = self._config.l2_of_d * tf.losses.get_regularization_loss(self._name + '/discriminator')
-            self._d_loss = self._d_loss + drl
+        with tf.name_scope('g_loss'):
+            self._g_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(self._fake_dis), self._fake_dis)
+        with tf.name_scope('d_loss'):
+            self._d_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(self._dis), self._dis) + \
+                tf.losses.sigmoid_cross_entropy(tf.zeros_like(self._fake_dis), self._fake_dis)
+            if self._config.l2_of_d:
+                drl = self._config.l2_of_d * tf.losses.get_regularization_loss(self._name + '/discriminator')
+                self._d_loss = self._d_loss + drl
 
     def _train_def(self):
         # train predictor
@@ -125,6 +138,8 @@ class Model(object):
         self._sess.run(tf.global_variables_initializer())
         self._saver = tf.train.Saver(max_to_keep=self._config.save_n_times)
 
+        self._writer = tf.summary.FileWriter(os.path.join(self._config.save_path, 'log'), self._sess.graph)
+
     def fit(self):
         # todo: train predictor
 
@@ -134,9 +149,13 @@ class Model(object):
 
         pass
 
-    def predict(self):
-        # todo: give the PTE
-        pass
+    def predict(self, inputs, fake_inputs):
+        # give the PTE
+        return self._sess.run(self._pte, feed_dict={self._input: inputs,
+                                                    self._fake_input: fake_inputs})
+
+    def save(self, path, step=None):
+        self._saver.save(self._sess, path, step)
 
     def export(self, path):
         """export model with input: true state and treatment, output: PTE
@@ -163,3 +182,7 @@ class Model(object):
                                                  'predict': prediction_signature
                                              })
         builder.save()
+
+
+if __name__ == '__main__':
+    model = Model(ModelConfig())
