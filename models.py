@@ -140,14 +140,24 @@ class Model(object):
 
         self._writer = tf.summary.FileWriter(os.path.join(self._config.save_path, 'log'), self._sess.graph)
 
-    def fit(self):
+    def fit(self, inputs, fake_inputs, labels):
         # todo: train predictor
+        for _ in range(self._config.epochs):
+            self._sess.run(self._train_predictor_op, feed_dict={self._input: inputs,
+                                                                self._true_label: labels})
 
         # todo: train discriminator
+        for _ in range(self._config.epochs):
+            self._sess.run(self._train_d, feed_dict={self._input: inputs,
+                                                     self._true_label: labels,
+                                                     self._fake_input: fake_inputs})
 
         # todo: adversarial and reinforcement training
-
-        pass
+        for _ in range(self._config.epochs):
+            self._sess.run(self._train_g, feed_dict={self._fake_input: fake_inputs})
+            self._sess.run(self._train_d, feed_dict={self._input: inputs,
+                                                     self._true_label: labels,
+                                                     self._fake_input: fake_inputs})
 
     def predict(self, inputs, fake_inputs):
         # give the PTE
