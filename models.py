@@ -1,6 +1,42 @@
+import abc
 import os
 
 import tensorflow as tf
+
+
+class BaseModel(metaclass=abc.ABCMeta):
+    def __init__(self,
+                 config,
+                 name):
+        self._config = config
+        self._name = name
+
+    def build(self):
+        self._build_graph()
+        self._init_session()
+
+    @abc.abstractmethod
+    def _build_graph(self):
+        pass
+
+    def _init_session(self):
+        c = tf.ConfigProto()
+        c.gpu_options.allow_growth = True
+        self._sess = tf.Session(c)
+        self._sess.run(tf.global_variables_initializer())
+        self._saver = tf.train.Saver(max_to_keep=self._config.save_n_times)
+
+        self._writer = tf.summary.FileWriter(os.path.join(self._config.save_path, 'log'), self._sess.graph)
+
+    @abc.abstractmethod
+    def fit(self, data_set):
+        pass
+
+    def save(self, path, step=None):
+        self._saver.save(self._sess, path, step)
+
+    def export(self, path):
+        pass
 
 
 class ModelConfig(object):
