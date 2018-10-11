@@ -73,35 +73,38 @@ class CFBlock(BaseModel):
             with tf.variable_scope("generator"):
                 zg = tf.random_uniform([batch_size, self._config.k-1], minval=-1, maxval=1)
                 i = tf.concat([x, t, y, zg], -1)
-                for _ in range(self._config.hidden_layers):
+                for _ in range(self._config.hidden_layers-1):
                     i = tf.contrib.layers.fully_connected(i, self._config.hidden_units)
-                y_tilde = tf.contrib.layers.fully_connected(i, self._config.k)
+                y_tilde = tf.contrib.layers.fully_connected(i, self._config.k, activation_fn=None)
                 return y_tilde
 
         def dis(x, y, reuse=False):
             with tf.variable_scope("discriminator", reuse=reuse):
                 i = tf.concat([x, y], -1)
-                for _ in range(self._config.hidden_layers):
+                for _ in range(self._config.hidden_layers-1):
                     i = tf.contrib.layers.fully_connected(i, self._config.hidden_units)
-                logits = tf.contrib.layers.fully_connected(i, self._config.k)
+                logits = tf.contrib.layers.fully_connected(i, self._config.k, activation_fn=None)
                 return logits
 
         with tf.variable_scope('gan'):
             self._y_tilde = gen(self._x_batch, self._t_batch, self._y_batch)
             self._y_bar = self._y_tilde * (1 - self._t_batch) + self._y_batch * self._t_batch
             self._cf_logits = dis(self._x_batch, self._y_bar)
+            # self._cf_fake_logits = dis(self._x_batch, self._y_tilde, reuse=True)
 
     def _loss_def(self):
         with tf.name_scope('loss'):
             with tf.name_scope('g_loss'):
-                dis_label = tf.ones_like(self._cf_logits) - self._t_batch
+                dis_label = 1 - self._t_batch
                 self._g_loss = tf.losses.sigmoid_cross_entropy(dis_label, self._cf_logits)
-                y_tilde_eta = tf.reduce_sum(self._y_tilde * self._t_batch, -1, keepdims=True)
+                # self._g_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(self._cf_fake_logits),
+                #                                                self._cf_fake_logits)
+                self._y_tilde_eta = tf.reduce_sum(self._y_tilde * self._t_batch, -1, keepdims=True)
                 with tf.name_scope('supervised_loss'):
-                    self._g_supervised_loss = tf.losses.mean_squared_error(self._y_batch, y_tilde_eta)
+                    self._g_supervised_loss = tf.losses.mean_squared_error(self._y_batch, self._y_tilde_eta)
                 self._cf_g_loss = self._g_loss + self._config.alpha * self._g_supervised_loss
             with tf.name_scope('d_loss'):
-                self._cf_d_loss = tf.losses.sigmoid_cross_entropy(1-dis_label, self._cf_logits)
+                self._cf_d_loss = tf.losses.sigmoid_cross_entropy(self._t_batch, self._cf_logits)
 
     def _train_def(self):
         g_vars = tf.trainable_variables(self._name + "/gan/generator")
@@ -121,7 +124,7 @@ class CFBlock(BaseModel):
                                                           self._input_t: data_set.t,
                                                           self._input_y: data_set.y})
 
-        for i in range(self._config.epochs):
+        for i in range(1, self._config.epochs+1):
             _, cf_d_loss = self._sess.run((self._train_d, self._cf_d_loss))
             _, cf_g_loss = self._sess.run((self._train_g, self._cf_g_loss))
 
@@ -169,17 +172,17 @@ class ITEBlock(BaseModel):
             with tf.variable_scope('generator'):
                 zi = tf.random_uniform([batch_size, self._config.k], minval=-1, maxval=1)
                 i = tf.concat([x, zi], -1)
-                for _ in range(self._config.hidden_layers):
+                for _ in range(self._config.hidden_layers-1):
                     i = tf.contrib.layers.fully_connected(i, self._config.hidden_units)
-                y_hat = tf.contrib.layers.fully_connected(i, self._config.k)
+                y_hat = tf.contrib.layers.fully_connected(i, self._config.k, activation_fn=None)
                 return y_hat
 
         def dis(x, y, reuse=False):
             with tf.variable_scope("discriminator", reuse=reuse):
                 i = tf.concat([x, y], -1)
-                for _ in range(self._config.hidden_layers):
+                for _ in range(self._config.hidden_layers-1):
                     i = tf.contrib.layers.fully_connected(i, self._config.hidden_units)
-                logits = tf.contrib.layers.fully_connected(i, 1)
+                logits = tf.contrib.layers.fully_connected(i, 1, activation_fn=None)
                 return logits
 
         with tf.variable_scope("gan"):
@@ -220,9 +223,9 @@ class ITEBlock(BaseModel):
         self._sess.run(self._iter.initializer, feed_dict={self._input_x: data_set.x,
                                                           self._input_y: data_set.y})
 
-        for i in range(self._config.epochs):
-            self._sess.run(self._train_d)
-            self._sess.run(self._train_g)
+        for i in range(1, self._config.epochs+1):
+            _, ite_d_loss = self._sess.run((self._train_d, self._ite_d_loss))
+            _, ite_g_loss = self._sess.run((self._train_g, self._ite_g_loss))
 
     def gen_y_hat(self, data_set):
         return self._sess.run(self._y_hat, feed_dict={self._x_batch: data_set.x})

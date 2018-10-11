@@ -2,7 +2,7 @@ import numpy as np
 
 from .model import *
 from data import IHDP
-from metric import pehe
+from metric import sqrt_pehe
 
 
 def run_experiments(n_experiments=1000):
@@ -27,5 +27,5 @@ def run_experiments(n_experiments=1000):
         ite_block.fit(complete_set)
         y_hat = ite_block.gen_y_hat(test_set)
         true_ite = np.transpose(np.vstack((test_set.y0, test_set.y1)))
-        sqrt_pehe = pehe(true_ite, y_hat)
-        print(sqrt_pehe)
+        pehe = sqrt_pehe(true_ite, y_hat)
+        print(pehe)
