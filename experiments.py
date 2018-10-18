@@ -1,6 +1,7 @@
 import argparse
 
 import ganite.experiments
+import garm.experiments
 
 
 def main():
@@ -10,8 +11,8 @@ def main():
 
 def parse_arg():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, choices=['ganite'], default='ganite')
-    parser.add_argument("--num_experiments", type=int, default=1000)
+    parser.add_argument("--model", type=str, choices=['ganite', 'garm'], default='garm')
+    parser.add_argument("--num_experiments", type=int, default=100)
 
     args = parser.parse_args()
     return args
@@ -20,6 +21,8 @@ def parse_arg():
 def proceed(args):
     if args.model == "ganite":
         ganite.experiments.run_experiments(args.num_experiments)
+    elif args.model == 'garm':
+        garm.experiments.run_experiments(args.num_experiments)
     else:
         pass
 
