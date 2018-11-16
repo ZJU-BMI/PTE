@@ -231,4 +231,5 @@ class ITEBlock(BaseModel):
         return self._sess.run(self._y_hat, feed_dict={self._x_batch: data_set.x})
 
     def export(self, path):
+        # todo: export model
         pass

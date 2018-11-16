@@ -1,3 +1,5 @@
+import json
+
 import tensorflow as tf
 
 from models import BaseModel
@@ -14,7 +16,7 @@ class GARMConfig(object):
         self.hidden_units = 8
         self.hidden_layers = 5
 
-        self.epochs = 1000
+        self.epochs = 10000
         self.learning_rate = 0.001
         self.batch_size = 64
 
@@ -28,6 +30,28 @@ class GARMConfig(object):
     @property
     def save_n_epochs(self):
         return int(self.epochs / self.save_n_times)
+
+    def save(self, file):
+        with open(file, 'w', encoding='utf-8') as wf:
+            json.dump(self.__dict__, wf, indent=2, separators=(',', ': '), default=lambda o: o.__dict__)
+
+    @classmethod
+    def load(cls, file):
+        with open(file, 'r', encoding='utf-8') as rf:
+            con = json.load(rf)
+        c = cls()
+        for k, v in con.items():
+            setattr(c, k, v)
+        return c
+
+    def __eq__(self, other):
+        if isinstance(other, GARMConfig):
+            if len(self.__dict__) != len(other.__dict__):
+                return False
+            for f, s in zip(self.__dict__.items(), other.__dict__.items()):
+                if f != s:
+                    return False
+        return NotImplementedError
 
 
 class GARM(BaseModel):
@@ -115,14 +139,24 @@ class GARM(BaseModel):
         # maximize reward
         self._train_h = tf.train.AdamOptimizer().minimize(self._reward, var_list=g_vars)
 
+    def loss(self, data_set):
+        y_f_loss = self._sess.run(self._supervised_loss, feed_dict={self._x_batch: data_set.x,
+                                                                    self._t_batch: data_set.t,
+                                                                    self._y_batch: data_set.y})
+        return y_f_loss
+
     def fit(self, data_set):
         self._sess.run(self._init)
         self._sess.run(self._iter.initializer, feed_dict={self._input_x: data_set.x,
                                                           self._input_t: data_set.t,
                                                           self._input_y: data_set.y})
 
-        for _ in range(self._config.epochs):
+        for i in range(self._config.epochs):
             self._sess.run(self._train_p)
+
+            if i % 100 == 0 or i == self._config.epochs-1:
+                y_f_loss = self.loss(data_set)
+                print('loss of epoch {} is {}'.format(i, y_f_loss))
 
         for _ in range(self._config.epochs):
             self._sess.run(self._train_d)

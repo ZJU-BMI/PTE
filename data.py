@@ -38,8 +38,8 @@ class IHDP(DataSet):
         yf = np.reshape(y[:, 0], (-1, 1))
         y0 = y[:, 1]
         y1 = y[:, 2]
-        t = np.reshape(np.load(t_path), -1)
-        t = pd.get_dummies(t).values
+        t = np.reshape(np.load(t_path), (-1, 1))
+        # t = pd.get_dummies(t).values
         return cls(x, t, yf, y1, y0)
 
     def split(self, train=0.56, val=0.24):
