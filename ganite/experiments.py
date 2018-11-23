@@ -5,7 +5,7 @@ from data import IHDP
 from metric import sqrt_pehe
 
 
-def run_experiments(n_experiments=1000):
+def run_experiments(n_experiments=1000, data_set=None):
     gan_ite_config = GANITEConfig()
     cf_block = CFBlock(gan_ite_config)
 

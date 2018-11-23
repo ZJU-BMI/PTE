@@ -3,7 +3,6 @@ from keras.layers import Input, Dense, Concatenate
 from keras.engine.topology import Network
 from keras.optimizers import Adam, RMSprop
 from keras.models import Model
-import tensorflow as tf
 
 
 __all__ = ['GARMConfig',
@@ -20,6 +19,8 @@ class GARMConfig(object):
         self.dim_dis = 8
 
         self.n_input = 25
+        self.n_treat = 1
+        self.categorical = 0
 
 
 class GARM(object):
@@ -32,22 +33,29 @@ class GARM(object):
 
         self._dis_net = self.build_discriminator()
         self._dis_net.compile(RMSprop(0.001),
-                              loss=['binary_crossentropy'])  # 训练判别器的，输入为x, t, y
+                              loss=['binary_crossentropy'],
+                              metrics=['acc'])  # 训练判别器的，输入为x, t, y
 
         x_input = Input(shape=(self._config.n_input, ))
-        t_input = Input(shape=(1, ))
+        t_input = Input(shape=(self._config.n_treat, ))
         x_rep = self._rep_net(x_input)
         y_pred = self._reg_net([x_rep, t_input])
         self._generator = Model(inputs=(x_input, t_input), outputs=y_pred)  # 训练生成器，输入为x, t
-        self._generator.compile(RMSprop(0.001),
-                                loss=['mean_squared_error'])
+        if self._config.categorical == 0:
+            self._generator.compile(RMSprop(0.001),
+                                    loss=['mean_squared_error'])
+        else:
+            self._generator.compile(RMSprop(0.001),
+                                    loss=['binary_crossentropy'],
+                                    metrics=['acc'])
 
         self._dis_net_fixed = Network(inputs=self._dis_net.input, outputs=self._dis_net.output)
         self._dis_net_fixed.trainable = False
         logits = self._dis_net_fixed([x_rep, t_input, y_pred])
         self._gan = Model(inputs=(x_input, t_input), outputs=logits)  # 训练生成器用的，只需要x和t的输入
         self._gan.compile(RMSprop(0.001),
-                          loss=['binary_crossentropy'])
+                          loss=['binary_crossentropy'],
+                          metrics=['acc'])
 
     def build_representation(self):
         inputs = Input(shape=(self._config.n_input, ))
@@ -63,11 +71,14 @@ class GARM(object):
         else:
             input_dim = self._config.dim_rep
         inputs = Input(shape=(input_dim, ))
-        t = Input(shape=(1, ))
+        t = Input(shape=(self._config.n_treat, ))
         x = Concatenate()([inputs, t])
         for _ in range(self._config.n_reg):
             x = Dense(self._config.dim_reg, activation='relu')(x)
-        x = Dense(1, activation=None)(x)
+        if self._config.categorical == 0:
+            x = Dense(1, activation=None)(x)
+        else:
+            x = Dense(1, activation='sigmoid')(x)
         model = Model(inputs=(inputs, t), outputs=x)
         return model
 
@@ -77,7 +88,7 @@ class GARM(object):
         else:
             input_dim = self._config.dim_rep
         inputs = Input(shape=(input_dim, ))
-        t = Input(shape=(1, ))
+        t = Input(shape=(self._config.n_treat, ))
         y = Input(shape=(1, ))
         x = Concatenate()([inputs, t, y])
         for _ in range(self._config.n_dis):
@@ -86,7 +97,7 @@ class GARM(object):
         model = Model(inputs=(inputs, t, y), outputs=x)
         return model
 
-    def train(self, train_set, val_set, batch_size=128, iterations=1000):
+    def train(self, train_set, val_set, batch_size=128, iterations=1000, ad_train=True):
         x, t, y = train_set.x, train_set.t, train_set.y
 
         valid = np.ones((batch_size, 1))
@@ -96,15 +107,24 @@ class GARM(object):
         # --------------------------------
         # supervised training of predictor
         # --------------------------------
-        # for i in range(iterations):
-        #     idx = np.random.randint(0, x.shape[0], batch_size)
-        #     train_x, train_t, train_y = x[idx], t[idx], y[idx]
-        #
-        #     self._generator.train_on_batch((train_x, train_t), train_y)
         self._generator.fit([x, t], y,
                             batch_size=128,
                             epochs=int(iterations * batch_size / num),
-                            validation_data=([val_set.x, val_set.t], val_set.y))
+                            validation_data=([val_set.x, val_set.t], val_set.y),
+                            verbose=0)
+
+        if not ad_train:
+            return
+        # -------------------
+        # discriminator train
+        # -------------------
+        for i in range(iterations):
+            idx = np.random.randint(0, num, batch_size)
+            train_x, train_t, train_y = x[idx], t[idx], y[idx]
+            fake_y = self._generator.predict([train_x, 1-train_t])
+            x_rep = self._rep_net.predict(train_x)
+            self._dis_net.train_on_batch([x_rep, train_t, train_y], valid)
+            self._dis_net.train_on_batch([x_rep, 1-train_t, fake_y], fake)
 
         # -----------------
         # adversarial train
@@ -124,5 +144,10 @@ class GARM(object):
         y = self._generator.predict([x, t], batch_size=batch_size)
         return y
 
-    def evaluate(self):
-        pass
+    def evaluate(self, test_set):
+        metrics = self._generator.evaluate([test_set.x, test_set.t], test_set.y)
+        return metrics
+
+    @property
+    def metrics_names(self):
+        return self._generator.metrics_names
