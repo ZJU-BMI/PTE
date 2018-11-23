@@ -1,4 +1,4 @@
-from keras.layers import Input, Dense, Dropout, BatchNormalization
+from keras.layers import Input, Dense, Dropout, BatchNormalization, Add
 from keras.models import Model
 from keras.optimizers import SGD, Adam, RMSprop
 from keras.regularizers import l1, l2
@@ -99,13 +99,17 @@ class MyModel(object):
                  loss_fn,
                  regularizer,
                  regular_coef):
+        K.clear_session()
+
         inputs = Input(shape=(self.n_input, ))
         x = inputs
 
         use_bias = False if use_bn else True
 
         for _ in range(layers):
-            x = Dense(units, activation=activation_fn, use_bias=use_bias,
+            x = Dense(units,
+                      activation=activation_fn,
+                      use_bias=use_bias,
                       kernel_regularizer=regularizer(regular_coef))(x)
             if use_bn:  # preferred to use batch normalization
                 x = BatchNormalization()(x)
@@ -113,22 +117,27 @@ class MyModel(object):
                 x = Dropout(drop_rate)(x)
 
         if self.n_classes <= 2:
-            outputs = Dense(1, activation='sigmoid')(x)
+            outputs = Dense(1,
+                            activation='sigmoid',
+                            kernel_regularizer=regularizer(regular_coef))(x)
         else:
-            outputs = Dense(self.n_classes, activation='softmax')(x)
+            outputs = Dense(self.n_classes,
+                            activation='softmax',
+                            kernel_regularizer=regularizer(regular_coef))(x)
 
         model = Model(inputs=inputs, outputs=outputs)
         model.compile(build_optimizer(optimizer, learning_rate),
                       loss=custom_loss(loss_fn, self.n_classes),
-                      metrics=['acc'])
+                      metrics=['acc'],
+                      callbacks=callbacks)
 
         return model
 
 
 residual_param_dist = {
-    'layers': [0, 1, 2, 3],
+    'layers': [1, 2, 3, 4, 5],
     'units': [25, 12, 8],
-    'activation_fn': ['sigmoid', 'relu', 'elu'],
+    'activation_fn': ['elu', 'sigmoid', 'relu'],
     'optimizer': ['adam', 'sgd', 'rmsprop'],
     'learning_rate': [0.01, 0.001, 0.0001],
     'dropout_rate': [0.1, 0.2, 0.3, 0.5],
@@ -153,17 +162,33 @@ class ResidualModel(object):
                  loss_fn,
                  regularizer,
                  regular_coef):
+        K.clear_session()
+
         inputs = Input(shape=(self.n_input, ))
-        x = Dense(units, activation=activation_fn)(inputs)
+        x = Dense(units,
+                  activation=activation_fn,
+                  kernel_regularizer=regularizer(regular_coef))(inputs)
 
         for _ in range(layers):
             i = x
-            x = Dense(units, activation=activation_fn)(x)
-            x = Dense(units)(x)
+            x = Dense(units,
+                      activation=activation_fn,
+                      kernel_regularizer=regularizer(regular_coef))(x)
+            x = Dense(units,
+                      kernel_regularizer=regularizer(regular_coef))(x)
             x = Dropout(dropout_rate)(x)
-            x = BatchNormalization()(i + x)
+            x = Add()([i, x])
+            x = BatchNormalization()(x)
 
-        outputs = Dense(self.n_class)(x)
+        if self.n_class <= 2:
+            outputs = Dense(1,
+                            activation='sigmoid',
+                            kernel_regularizer=regularizer(regular_coef))(x)
+        else:
+            outputs = Dense(self.n_class,
+                            activation='softmax',
+                            kernel_regularizer=regularizer(regular_coef))(x)
+
         model = Model(inputs=inputs, outputs=outputs)
         model.compile(build_optimizer(optimizer, learning_rate),
                       loss=custom_loss(loss_fn, self.n_class),
